@@ -24,6 +24,17 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r requirements.txt
 
+      # Reutiliza el token de Garmin entre corridas para evitar el login
+      # completo (que es el que dispara el 429). La clave rota por corrida y
+      # restaura la más reciente, así el token refrescado se vuelve a guardar.
+      - name: Restaurar token de Garmin
+        uses: actions/cache@v4
+        with:
+          path: ~/.garminconnect
+          key: garmin-token-${{ github.run_id }}
+          restore-keys: |
+            garmin-token-
+
       - name: Sincronizar últimos 2 días
         env:
           GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}

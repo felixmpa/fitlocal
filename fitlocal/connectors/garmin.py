@@ -11,6 +11,7 @@ Estrategia de ingesta:
 
 from __future__ import annotations
 
+import os
 from datetime import date, timedelta
 
 from fitlocal.config import settings
@@ -36,16 +37,35 @@ class GarminConnector:
     def _login(self):
         if self._client is not None:
             return self._client
-        if not self.email or not self.password:
-            raise RuntimeError(
-                "Faltan credenciales de Garmin. Define GARMIN_EMAIL y "
-                "GARMIN_PASSWORD en tu .env."
-            )
         # Import perezoso: así el resto del proyecto no exige la librería.
         from garminconnect import Garmin
 
+        tokenstore = os.path.expanduser(os.getenv("GARMINTOKENS", "~/.garminconnect"))
+
+        # 1) Intentar reanudar la sesión desde un token guardado. Esto evita el
+        #    login completo, que es justo lo que Garmin limita con 429 desde
+        #    IPs de la nube (como las de GitHub Actions).
+        try:
+            client = Garmin()
+            client.login(tokenstore)
+            self._client = client
+            return client
+        except Exception:
+            pass
+
+        # 2) Sin token válido: login completo con email/contraseña y guardar el
+        #    token para que las próximas corridas solo reanuden.
+        if not self.email or not self.password:
+            raise RuntimeError(
+                "No hay token de Garmin guardado y faltan credenciales. "
+                "Define GARMIN_EMAIL y GARMIN_PASSWORD en tu .env."
+            )
         client = Garmin(self.email, self.password)
         client.login()
+        try:
+            client.garth.dump(tokenstore)
+        except Exception:
+            pass
         self._client = client
         return client
 
