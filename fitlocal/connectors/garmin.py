@@ -5,29 +5,32 @@ interna y algo se rompe, se arregla aquí sin tocar el resto del proyecto.
 
 Estrategia de ingesta:
   1. Bajar los datos crudos de Garmin para un día.
-  2. Guardar el JSON completo en `raw_snapshots` (red de seguridad).
-  3. Normalizar lo más útil en `daily_metrics` y `activities`.
+  2. Guardar el JSON completo en "Raw Snapshots" (red de seguridad).
+  3. Normalizar lo más útil en "Daily Metrics" y "Activities".
 """
 
 from __future__ import annotations
 
 from datetime import date, timedelta
 
-from sqlalchemy import select
-
 from fitlocal.config import settings
-from fitlocal.core.database import get_session
-from fitlocal.core.models import Activity, DailyMetric, RawSnapshot
+from fitlocal.core.store import AirtableStore
 
 
 class GarminConnector:
-    """Envuelve la conexión a Garmin Connect y la ingesta a la BD."""
+    """Envuelve la conexión a Garmin Connect y la ingesta a Airtable."""
 
     SOURCE = "garmin"
 
-    def __init__(self, email: str | None = None, password: str | None = None):
+    def __init__(
+        self,
+        email: str | None = None,
+        password: str | None = None,
+        store: AirtableStore | None = None,
+    ):
         self.email = email or settings.garmin_email
         self.password = password or settings.garmin_password
+        self.store = store or AirtableStore()
         self._client = None  # se inicializa de forma perezosa al primer uso
 
     def _login(self):
@@ -46,40 +49,6 @@ class GarminConnector:
         self._client = client
         return client
 
-    # --- Helpers de persistencia ----------------------------------------
-
-    def _save_snapshot(self, session, endpoint: str, day: date, payload) -> None:
-        """Guarda (o reemplaza) el JSON crudo de un endpoint para un día."""
-        if payload is None:
-            return
-        existing = session.scalar(
-            select(RawSnapshot).where(
-                RawSnapshot.source == self.SOURCE,
-                RawSnapshot.endpoint == endpoint,
-                RawSnapshot.day == day,
-            )
-        )
-        if existing:
-            existing.payload = payload
-        else:
-            session.add(
-                RawSnapshot(
-                    source=self.SOURCE, endpoint=endpoint, day=day, payload=payload
-                )
-            )
-
-    def _upsert_daily(self, session, day: date, fields: dict) -> None:
-        """Crea o actualiza la fila de métricas de un día."""
-        clean = {k: v for k, v in fields.items() if v is not None}
-        if not clean:
-            return
-        metric = session.scalar(select(DailyMetric).where(DailyMetric.day == day))
-        if metric is None:
-            metric = DailyMetric(day=day)
-            session.add(metric)
-        for key, value in clean.items():
-            setattr(metric, key, value)
-
     # --- Ingesta ---------------------------------------------------------
 
     def sync_day(self, day: date) -> None:
@@ -91,74 +60,65 @@ class GarminConnector:
         # al resto. Garmin a veces no tiene datos de cierto tipo en un día.
         stats = _safe(lambda: client.get_stats(iso))
         sleep = _safe(lambda: client.get_sleep_data(iso))
-        rhr = _safe(lambda: client.get_rhr_day(iso))
         body_battery = _safe(lambda: client.get_body_battery(iso, iso))
         hrv = _safe(lambda: client.get_hrv_data(iso))
         readiness = _safe(lambda: client.get_training_readiness(iso))
         body_comp = _safe(lambda: client.get_body_composition(iso))
 
-        with get_session() as session:
-            # 1) Guardar todo en crudo.
-            for endpoint, payload in {
-                "stats": stats,
-                "sleep": sleep,
-                "rhr": rhr,
-                "body_battery": body_battery,
-                "hrv": hrv,
-                "training_readiness": readiness,
-                "body_composition": body_comp,
-            }.items():
-                self._save_snapshot(session, endpoint, day, payload)
+        # 1) Guardar todo en crudo.
+        for endpoint, payload in {
+            "stats": stats,
+            "sleep": sleep,
+            "body_battery": body_battery,
+            "hrv": hrv,
+            "training_readiness": readiness,
+            "body_composition": body_comp,
+        }.items():
+            self.store.save_snapshot(self.SOURCE, endpoint, iso, payload)
 
-            # 2) Normalizar lo más útil a columnas.
-            self._upsert_daily(
-                session,
-                day,
-                {
-                    "steps": _dig(stats, "totalSteps"),
-                    "resting_hr": _dig(stats, "restingHeartRate"),
-                    "calories_burned": _dig(stats, "totalKilocalories"),
-                    "stress_avg": _dig(stats, "averageStressLevel"),
-                    "body_battery_high": _dig(stats, "bodyBatteryHighestValue"),
-                    "body_battery_low": _dig(stats, "bodyBatteryLowestValue"),
-                    "sleep_score": _dig(sleep, "dailySleepDTO", "sleepScores", "overall", "value"),
-                    "sleep_seconds": _dig(sleep, "dailySleepDTO", "sleepTimeSeconds"),
-                    "hrv": _dig(hrv, "hrvSummary", "lastNightAvg"),
-                    "training_readiness": _readiness_score(readiness),
-                    "weight_kg": _weight_kg(body_comp),
-                },
-            )
+        # 2) Normalizar lo más útil a columnas de "Daily Metrics".
+        sleep_seconds = _dig(sleep, "dailySleepDTO", "sleepTimeSeconds")
+        self.store.upsert_daily_metric(
+            {
+                "Day": iso,
+                "Steps": _dig(stats, "totalSteps"),
+                "Resting HR": _dig(stats, "restingHeartRate"),
+                "Calories Burned": _dig(stats, "totalKilocalories"),
+                "Stress Avg": _dig(stats, "averageStressLevel"),
+                "Body Battery High": _dig(stats, "bodyBatteryHighestValue"),
+                "Body Battery Low": _dig(stats, "bodyBatteryLowestValue"),
+                "Sleep Score": _dig(sleep, "dailySleepDTO", "sleepScores", "overall", "value"),
+                "Sleep Hours": round(sleep_seconds / 3600, 1) if sleep_seconds else None,
+                "HRV": _dig(hrv, "hrvSummary", "lastNightAvg"),
+                "Training Readiness": _readiness_score(readiness),
+                "Weight kg": _weight_kg(body_comp),
+            }
+        )
 
     def sync_activities(self, limit: int = 20) -> None:
         """Descarga las últimas actividades/entrenamientos."""
         client = self._login()
         activities = _safe(lambda: client.get_activities(0, limit)) or []
 
-        with get_session() as session:
-            for act in activities:
-                gid = str(act.get("activityId")) if act.get("activityId") else None
-                if gid is None:
-                    continue
-                existing = session.scalar(
-                    select(Activity).where(Activity.garmin_activity_id == gid)
-                )
-                if existing:
-                    continue
-                start = act.get("startTimeLocal", "")
-                day = _parse_day(start)
-                session.add(
-                    Activity(
-                        garmin_activity_id=gid,
-                        day=day,
-                        activity_type=_dig(act, "activityType", "typeKey"),
-                        name=act.get("activityName"),
-                        duration_seconds=act.get("duration"),
-                        distance_m=act.get("distance"),
-                        avg_hr=act.get("averageHR"),
-                        max_hr=act.get("maxHR"),
-                        calories=act.get("calories"),
-                    )
-                )
+        for act in activities:
+            gid = act.get("activityId")
+            if gid is None:
+                continue
+            duration_s = act.get("duration")
+            distance_m = act.get("distance")
+            self.store.add_activity_if_new(
+                {
+                    "Activity ID": str(gid),
+                    "Day": _parse_day(act.get("startTimeLocal", "")),
+                    "Type": _dig(act, "activityType", "typeKey"),
+                    "Name": act.get("activityName"),
+                    "Duration min": round(duration_s / 60, 1) if duration_s else None,
+                    "Distance km": round(distance_m / 1000, 2) if distance_m else None,
+                    "Avg HR": act.get("averageHR"),
+                    "Max HR": act.get("maxHR"),
+                    "Calories": act.get("calories"),
+                }
+            )
 
     def sync_range(self, start: date, end: date) -> None:
         """Sincroniza un rango de días [start, end] inclusive."""
@@ -203,9 +163,9 @@ def _weight_kg(body_comp):
     return round(grams / 1000.0, 2) if isinstance(grams, (int, float)) else None
 
 
-def _parse_day(start_time_local: str) -> date:
-    """'2026-06-15 07:30:00' -> date(2026, 6, 15). Hoy por defecto si falla."""
+def _parse_day(start_time_local: str) -> str:
+    """'2026-06-15 07:30:00' -> '2026-06-15'. Hoy por defecto si falla."""
     try:
-        return date.fromisoformat(start_time_local.split(" ")[0])
+        return start_time_local.split(" ")[0] or date.today().isoformat()
     except Exception:
-        return date.today()
+        return date.today().isoformat()

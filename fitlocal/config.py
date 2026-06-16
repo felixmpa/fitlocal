@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     garmin_email: str | None = None
     garmin_password: str | None = None
 
+    # --- Airtable ---
+    airtable_token: str | None = None
+    airtable_base_id: str | None = None
+
     # --- Anthropic ---
     anthropic_api_key: str | None = None
 
@@ -30,7 +34,6 @@ class Settings(BaseSettings):
     # para reducir coste en llamadas frecuentes puedes usar claude-sonnet-4-6.
     fitlocal_model: str = "claude-opus-4-8"
     fitlocal_goal: str = "Mejorar mi salud general y consistencia"
-    fitlocal_db_url: str = "sqlite:///data/fitlocal.db"
 
 
 settings = Settings()
