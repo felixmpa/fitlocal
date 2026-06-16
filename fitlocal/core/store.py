@@ -29,6 +29,9 @@ TABLE_SNAPSHOTS = "Raw Snapshots"
 TABLE_GOAL = "Goal"
 TABLE_MEASUREMENTS = "Measurements"
 
+# Límite práctico de un campo de texto largo en Airtable (~100k caracteres).
+MAX_AIRTABLE_TEXT = 90_000
+
 # Métricas del cuerpo: (clave para los agentes, campo en "Measurements",
 # campo en "Goal"). Es la fuente de verdad para emparejar actual vs deseado.
 BODY_METRICS = [
@@ -69,19 +72,41 @@ class AirtableStore:
         )
 
     def save_snapshot(self, source: str, endpoint: str, day: str, payload) -> None:
-        """Guarda (o reemplaza) el JSON crudo de un endpoint para un día."""
+        """Guarda (o reemplaza) el JSON crudo de un endpoint para un día.
+
+        Es *best-effort*: los campos de texto largo de Airtable admiten hasta
+        ~100.000 caracteres, y algunos payloads de Garmin (sueño, Body Battery
+        minuto a minuto) los superan. Si no cabe, guardamos un marcador en vez
+        del JSON completo; y si la escritura falla, no rompemos la sincronización.
+        """
         if payload is None:
             return
-        key = f"{source}:{endpoint}:{day}"
+        text = json.dumps(payload, ensure_ascii=False)
+        if len(text) > MAX_AIRTABLE_TEXT:
+            text = json.dumps(
+                {
+                    "_truncated": True,
+                    "_chars": len(text),
+                    "_note": "payload demasiado grande para Airtable",
+                },
+                ensure_ascii=False,
+            )
         fields = {
-            "Key": key,
+            "Key": f"{source}:{endpoint}:{day}",
             "Source": source,
             "Endpoint": endpoint,
             "Day": day,
-            "Payload": json.dumps(payload, ensure_ascii=False),
+            "Payload": text,
             "Fetched At": _now_iso(),
         }
-        self._table(TABLE_SNAPSHOTS).batch_upsert([{"fields": fields}], key_fields=["Key"])
+        try:
+            self._table(TABLE_SNAPSHOTS).batch_upsert(
+                [{"fields": fields}], key_fields=["Key"]
+            )
+        except Exception:
+            # Los snapshots crudos son una red de seguridad opcional;
+            # nunca deben tumbar la ingesta de los datos normalizados.
+            pass
 
     def add_activity_if_new(self, fields: dict) -> bool:
         """Añade una actividad si su 'Activity ID' aún no existe. True si se añadió."""
