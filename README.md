@@ -106,6 +106,29 @@ El sistema calcula al vuelo **actual vs deseado** y se lo pasa a cada agente com
 la base de la meta sobre la que trabajar. (El peso, si no lo mides a mano, cae a
 la última lectura de tu báscula Garmin.)
 
+## Sincronización automática (GitHub Actions)
+
+El workflow `.github/workflows/sync-garmin.yml` ejecuta la sincronización de
+Garmin **cada día**, sin servidor ni tu máquina encendida. Como los datos viven
+en Airtable, no necesita almacenamiento propio.
+
+Para activarlo, añade estos *secrets* en tu repo
+(**Settings → Secrets and variables → Actions → New repository secret**):
+
+| Secret | Valor |
+|---|---|
+| `GARMIN_EMAIL` | tu correo de Garmin Connect |
+| `GARMIN_PASSWORD` | tu contraseña de Garmin Connect |
+| `AIRTABLE_TOKEN` | tu Personal Access Token de Airtable |
+| `AIRTABLE_BASE_ID` | el ID de tu base (`app...`) |
+
+Corre solo a las 11:00 UTC, y también puedes lanzarlo a mano desde la pestaña
+**Actions → Sincronizar Garmin → Run workflow**.
+
+> ⚠️ Garmin a veces bloquea inicios de sesión desde IPs de la nube o pide
+> verificación (MFA). Si el login falla desde Actions, lo más robusto es generar
+> la sesión una vez en local y persistir el token; lo montamos si te pasa.
+
 ## Notas
 
 - El conector de Garmin usa la librería **no oficial** `garminconnect`. Funciona

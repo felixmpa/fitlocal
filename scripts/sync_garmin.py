@@ -8,9 +8,14 @@
 from __future__ import annotations
 
 import argparse
+import os
+import sys
 from datetime import date, timedelta
 
-from fitlocal.connectors.garmin import GarminConnector
+# Permite ejecutar el script desde cualquier directorio.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from fitlocal.connectors.garmin import GarminConnector  # noqa: E402
 
 
 def main() -> None:

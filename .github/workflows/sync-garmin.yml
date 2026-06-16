@@ -1,0 +1,33 @@
+name: Sincronizar Garmin -> Airtable
+
+# Corre todos los días y permite lanzarlo a mano desde la pestaña Actions.
+on:
+  schedule:
+    # 11:00 UTC cada día (Garmin ya tiene el sueño de la noche anterior).
+    # Nota: el cron de GitHub es UTC y puede retrasarse en horas de mucha carga.
+    - cron: "0 11 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Sincronizar últimos 2 días
+        env:
+          GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
+          GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+          AIRTABLE_TOKEN: ${{ secrets.AIRTABLE_TOKEN }}
+          AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
+        run: python scripts/sync_garmin.py --days 2

@@ -8,10 +8,16 @@ El token necesita el scope `schema.bases:write`.
 
 from __future__ import annotations
 
-from pyairtable import Api
+import os
+import sys
 
-from fitlocal.config import settings
-from fitlocal.core.store import (
+# Permite ejecutar el script desde cualquier directorio.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from pyairtable import Api  # noqa: E402
+
+from fitlocal.config import settings  # noqa: E402
+from fitlocal.core.store import (  # noqa: E402
     TABLE_ACTIVITIES,
     TABLE_DAILY,
     TABLE_GOAL,
