@@ -14,6 +14,8 @@ from fitlocal.config import settings
 from fitlocal.core.store import (
     TABLE_ACTIVITIES,
     TABLE_DAILY,
+    TABLE_GOAL,
+    TABLE_MEASUREMENTS,
     TABLE_NUTRITION,
     TABLE_SNAPSHOTS,
 )
@@ -29,6 +31,14 @@ def _text(name: str) -> dict:
 
 def _long(name: str) -> dict:
     return {"name": name, "type": "multilineText"}
+
+
+def _check(name: str) -> dict:
+    return {
+        "name": name,
+        "type": "checkbox",
+        "options": {"icon": "check", "color": "greenBright"},
+    }
 
 
 # El primer campo de cada lista es el campo primario de la tabla.
@@ -78,6 +88,27 @@ TABLES = {
         _text("Day"),
         _long("Payload"),
         _text("Fetched At"),
+    ],
+    TABLE_GOAL: [
+        _text("Name"),
+        _long("Objective"),
+        _check("Active"),
+        _num("Target Weight kg", 1),
+        _num("Target Body Fat %", 1),
+        _num("Target Waist cm", 1),
+        _num("Target Chest cm", 1),
+        _num("Target Bicep cm", 1),
+        _num("Target Quad cm", 1),
+    ],
+    TABLE_MEASUREMENTS: [
+        _text("Date"),
+        _num("Weight kg", 1),
+        _num("Body Fat %", 1),
+        _num("Waist cm", 1),
+        _num("Chest cm", 1),
+        _num("Bicep cm", 1),
+        _num("Quad cm", 1),
+        _long("Notes"),
     ],
 }
 

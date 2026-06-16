@@ -84,11 +84,27 @@ uvicorn fitlocal.api.main:app --reload
 ```
 
 Endpoints principales:
+- `POST /goal` — define tu meta (valores deseados)
+- `POST /measurements` — registra una medición corporal (peso, grasa, cm)
+- `GET /goal` — tu meta: actual vs deseado por métrica
 - `POST /nutrition` — registra una comida: `{"description": "2 huevos y café"}`
 - `POST /sync/garmin` — sincroniza Garmin
 - `GET /metrics` — métricas diarias recientes
 - `GET /analyst` — análisis de tendencias
 - `GET /coach` — sugerencias según tu meta
+
+## La meta vive en Airtable
+
+Tu meta se modela en **dos tablas**, para no perder el historial de progreso:
+
+- **`Goal`** — tus valores **deseados** (peso, grasa %, y cm de barriga, pecho,
+  bícep, cuádriceps) + un objetivo en texto libre.
+- **`Measurements`** — una fila por **sesión de medición**, con fecha y tus
+  valores actuales. La "última medida" es la fila más reciente.
+
+El sistema calcula al vuelo **actual vs deseado** y se lo pasa a cada agente como
+la base de la meta sobre la que trabajar. (El peso, si no lo mides a mano, cae a
+la última lectura de tu báscula Garmin.)
 
 ## Notas
 

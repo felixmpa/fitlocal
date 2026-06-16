@@ -9,7 +9,7 @@ from __future__ import annotations
 from fitlocal.config import settings
 from fitlocal.core.store import AirtableStore
 from fitlocal.agents.analyst import AnalystAgent
-from fitlocal.agents.base import get_client, text_of
+from fitlocal.agents.base import as_json, get_client, text_of
 
 SYSTEM = (
     "Eres un coach de salud y rendimiento. Tu objetivo es ayudar al usuario a "
@@ -28,10 +28,10 @@ class CoachAgent:
         self.client = get_client()
         self.analyst = AnalystAgent(store=self.store, model=self.model)
 
-    def advise(self, days: int = 14, goal: str | None = None) -> str:
-        """Genera sugerencias para acercarte a tu meta."""
-        goal = goal or settings.fitlocal_goal
-        analysis = self.analyst.analyze(days)
+    def advise(self, days: int = 14) -> str:
+        """Genera sugerencias para acercarte a tu meta (leída desde Airtable)."""
+        goal = self.store.goal_summary()
+        analysis = self.analyst.analyze(days, goal=goal)
 
         response = self.client.messages.create(
             model=self.model,
@@ -43,9 +43,10 @@ class CoachAgent:
                 {
                     "role": "user",
                     "content": (
-                        f"MI META: {goal}\n\n"
+                        f"MI META (actual vs deseado):\n{as_json(goal)}\n\n"
                         f"ANÁLISIS DE MIS DATOS (últimos {days} días):\n{analysis}\n\n"
-                        "Dame sugerencias concretas y priorizadas para acercarme a mi meta."
+                        "Dame sugerencias concretas y priorizadas para acercarme a mi "
+                        "meta, indicando qué métrica atacar primero."
                     ),
                 }
             ],

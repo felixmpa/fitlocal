@@ -26,6 +26,19 @@ TABLE_DAILY = "Daily Metrics"
 TABLE_ACTIVITIES = "Activities"
 TABLE_NUTRITION = "Nutrition"
 TABLE_SNAPSHOTS = "Raw Snapshots"
+TABLE_GOAL = "Goal"
+TABLE_MEASUREMENTS = "Measurements"
+
+# Métricas del cuerpo: (clave para los agentes, campo en "Measurements",
+# campo en "Goal"). Es la fuente de verdad para emparejar actual vs deseado.
+BODY_METRICS = [
+    ("peso_kg", "Weight kg", "Target Weight kg"),
+    ("grasa_pct", "Body Fat %", "Target Body Fat %"),
+    ("barriga_cm", "Waist cm", "Target Waist cm"),
+    ("pecho_cm", "Chest cm", "Target Chest cm"),
+    ("bicep_cm", "Bicep cm", "Target Bicep cm"),
+    ("cuadricep_cm", "Quad cm", "Target Quad cm"),
+]
 
 
 class AirtableStore:
@@ -86,6 +99,73 @@ class AirtableStore:
         return self._table(TABLE_NUTRITION).create(
             {k: v for k, v in fields.items() if v is not None}
         )
+
+    # --- Meta y mediciones ----------------------------------------------
+
+    def set_goal(self, fields: dict) -> None:
+        """Crea o actualiza la meta. Se identifica por 'Name'."""
+        clean = {k: v for k, v in fields.items() if v is not None}
+        clean.setdefault("Name", "Mi meta")
+        self._table(TABLE_GOAL).batch_upsert([{"fields": clean}], key_fields=["Name"])
+
+    def active_goal(self) -> dict:
+        """Devuelve la meta activa (o la primera si ninguna está marcada)."""
+        rows = [r["fields"] for r in self._table(TABLE_GOAL).all()]
+        if not rows:
+            return {}
+        for row in rows:
+            if row.get("Active"):
+                return row
+        return rows[0]
+
+    def add_measurement(self, fields: dict) -> dict:
+        """Registra una sesión de medición corporal."""
+        return self._table(TABLE_MEASUREMENTS).create(
+            {k: v for k, v in fields.items() if v is not None}
+        )
+
+    def latest_measurement(self) -> dict:
+        """Devuelve la medición más reciente (por 'Date')."""
+        rows = [r["fields"] for r in self._table(TABLE_MEASUREMENTS).all()]
+        if not rows:
+            return {}
+        rows.sort(key=lambda r: str(r.get("Date", "")), reverse=True)
+        return rows[0]
+
+    def goal_summary(self) -> dict:
+        """Contexto de meta listo para los agentes: actual vs deseado + diferencia.
+
+        El peso, si no hay medición manual, cae a la última lectura de Garmin.
+        """
+        from fitlocal.config import settings
+
+        goal = self.active_goal()
+        measure = self.latest_measurement()
+
+        metrics: dict = {}
+        for key, mfield, tfield in BODY_METRICS:
+            actual = measure.get(mfield)
+            if actual is None and key == "peso_kg":
+                actual = self._latest_daily_weight()
+            deseado = goal.get(tfield)
+            if actual is None and deseado is None:
+                continue
+            diff = None
+            if isinstance(actual, (int, float)) and isinstance(deseado, (int, float)):
+                diff = round(actual - deseado, 1)
+            metrics[key] = {"actual": actual, "deseado": deseado, "diferencia": diff}
+
+        return {
+            "objetivo": goal.get("Objective") or settings.fitlocal_goal,
+            "ultima_medicion": measure.get("Date"),
+            "metricas": metrics,
+        }
+
+    def _latest_daily_weight(self):
+        for row in reversed(self.recent_daily_metrics(60)):
+            if row.get("Weight kg") is not None:
+                return row["Weight kg"]
+        return None
 
     # --- Lectura (para los agentes) -------------------------------------
 

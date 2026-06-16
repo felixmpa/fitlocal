@@ -33,8 +33,9 @@ class AnalystAgent:
             "nutricion": self.store.recent_nutrition(days),
         }
 
-    def analyze(self, days: int = 14) -> str:
+    def analyze(self, days: int = 14, goal: dict | None = None) -> str:
         data = self.gather(days)
+        goal = goal if goal is not None else self.store.goal_summary()
         response = self.client.messages.create(
             model=self.model,
             max_tokens=4000,
@@ -45,9 +46,10 @@ class AnalystAgent:
                 {
                     "role": "user",
                     "content": (
-                        f"Estos son mis datos de los últimos {days} días. "
-                        "Analiza tendencias, anomalías y correlaciones.\n\n"
-                        f"{as_json(data)}"
+                        f"MI META (actual vs deseado):\n{as_json(goal)}\n\n"
+                        f"MIS DATOS de los últimos {days} días:\n{as_json(data)}\n\n"
+                        "Analiza tendencias, anomalías y correlaciones, con foco en "
+                        "lo que más afecta a mi meta."
                     ),
                 }
             ],

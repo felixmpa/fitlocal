@@ -34,6 +34,28 @@ class SyncIn(BaseModel):
     end: date | None = None
 
 
+class GoalIn(BaseModel):
+    objective: str | None = None
+    active: bool | None = True
+    target_weight_kg: float | None = None
+    target_body_fat_pct: float | None = None
+    target_waist_cm: float | None = None
+    target_chest_cm: float | None = None
+    target_bicep_cm: float | None = None
+    target_quad_cm: float | None = None
+
+
+class MeasurementIn(BaseModel):
+    date: date | None = None
+    weight_kg: float | None = None
+    body_fat_pct: float | None = None
+    waist_cm: float | None = None
+    chest_cm: float | None = None
+    bicep_cm: float | None = None
+    quad_cm: float | None = None
+    notes: str | None = None
+
+
 # --- Salud ---------------------------------------------------------------
 
 
@@ -49,6 +71,53 @@ def root():
 def metrics(days: int = 14):
     """Métricas diarias recientes (desde Airtable)."""
     return AirtableStore().recent_daily_metrics(days)
+
+
+# --- Meta y mediciones ---------------------------------------------------
+
+
+@app.get("/goal")
+def get_goal():
+    """Meta actual: objetivo + actual vs deseado por métrica."""
+    return AirtableStore().goal_summary()
+
+
+@app.post("/goal")
+def set_goal(body: GoalIn):
+    """Define o actualiza tus valores deseados (la meta)."""
+    AirtableStore().set_goal(
+        {
+            "Name": "Mi meta",
+            "Objective": body.objective,
+            "Active": body.active,
+            "Target Weight kg": body.target_weight_kg,
+            "Target Body Fat %": body.target_body_fat_pct,
+            "Target Waist cm": body.target_waist_cm,
+            "Target Chest cm": body.target_chest_cm,
+            "Target Bicep cm": body.target_bicep_cm,
+            "Target Quad cm": body.target_quad_cm,
+        }
+    )
+    return AirtableStore().goal_summary()
+
+
+@app.post("/measurements")
+def add_measurement(body: MeasurementIn):
+    """Registra una sesión de medición corporal (peso, grasa, cm)."""
+    day = body.date or date.today()
+    AirtableStore().add_measurement(
+        {
+            "Date": day.isoformat(),
+            "Weight kg": body.weight_kg,
+            "Body Fat %": body.body_fat_pct,
+            "Waist cm": body.waist_cm,
+            "Chest cm": body.chest_cm,
+            "Bicep cm": body.bicep_cm,
+            "Quad cm": body.quad_cm,
+            "Notes": body.notes,
+        }
+    )
+    return AirtableStore().goal_summary()
 
 
 # --- Nutrición -----------------------------------------------------------
