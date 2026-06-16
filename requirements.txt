@@ -1,0 +1,14 @@
+# --- Núcleo / API ---
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.7
+pydantic-settings>=2.3
+
+# --- Base de datos ---
+SQLAlchemy>=2.0
+
+# --- Conector Garmin (no oficial) ---
+garminconnect>=0.2.19
+
+# --- Agentes IA ---
+anthropic>=0.40

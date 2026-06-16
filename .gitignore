@@ -1,0 +1,15 @@
+# Entorno
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Base de datos local
+*.db
+*.sqlite3
+data/
+
+# Sesiones / tokens de Garmin
+.garminconnect/
+~/.garminconnect/
